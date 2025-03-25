@@ -1,0 +1,4 @@
+{
+  "name": "Fritz!Box DOCSIS",
+  "iot_class": ["Local Polling"]
+}
