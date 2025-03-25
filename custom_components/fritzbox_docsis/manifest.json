@@ -1,6 +1,6 @@
 {
-  "domain": "Fritz!Box DOCSIS",
-  "name": "Fritz!Box DOCSIS",
+  "domain": "fritzbox_docsis",
+  "name": "FritzBoxDocsis",
   "documentation": "https://github.com/simon-mueller/fritzbox_docsis",
   "issue_tracker": "https://github.com/simon-mueller/fritzbox_docsis/issues",
   "version": "v2025.3.1",
