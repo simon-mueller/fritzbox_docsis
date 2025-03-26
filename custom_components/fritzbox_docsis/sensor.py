@@ -10,24 +10,15 @@ import requests
 import voluptuous as vol
 import xml.etree.ElementTree as ET
 import hashlib
+from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.entity import Entity
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
-import homeassistant.helpers.config_validation as cv
 
 DOMAIN = "fritzbox_channels"
-
-CONFIG_SCHEMA = vol.Schema({
-    DOMAIN: vol.Schema({
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_USERNAME): cv.string,
-        vol.Required(CONF_PASSWORD): cv.string,
-    })
-}, extra=vol.ALLOW_EXTRA)
-
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -40,9 +31,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     )
     return True
 
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    if unload_ok := await hass.config_entries.async_forward_entry_unload(entry, "sensor"):
+        hass.data[DOMAIN].pop(entry.entry_id)
+    return unload_ok
+
 class FritzBoxCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, config):
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=30)
+        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(seconds=30))
         self.config = config
 
     async def _async_update_data(self):
