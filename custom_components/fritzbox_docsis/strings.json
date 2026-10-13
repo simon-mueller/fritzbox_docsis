@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to a FRITZ!Box",
+        "description": "Enter the FRITZ!Box URL and a user account with permission to view cable information.",
+        "data": {
+          "url": "FRITZ!Box URL",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid HTTP or HTTPS URL.",
+      "invalid_auth": "The FRITZ!Box rejected the username or password.",
+      "cannot_connect": "Could not retrieve DOCSIS channel data from the FRITZ!Box."
+    },
+    "abort": {
+      "already_configured": "This FRITZ!Box is already configured."
+    }
+  }
+}

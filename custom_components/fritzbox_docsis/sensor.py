@@ -1,106 +1,142 @@
-"""
-Sensors displaying the DOCSIS channels and their properties
+"""Sensors for FRITZ!Box DOCSIS channel measurements."""
 
-For more details about this platform, please refer to the documentation at
-https://github.com/simon-mueller/fritzbox_docsis
-"""
+from __future__ import annotations
 
-import logging
-import requests
-import voluptuous as vol
-import xml.etree.ElementTree as ET
-import hashlib
-from datetime import timedelta
+import math
+import re
+from collections.abc import Iterator, Mapping
+from typing import Any
+
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.helpers.entity import Entity
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-DOMAIN = "fritzbox_channels"
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN
+from .coordinator import FritzBoxCoordinator
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    hass.data.setdefault(DOMAIN, {})
-    coordinator = FritzBoxCoordinator(hass, entry.data)
-    await coordinator.async_config_entry_first_refresh()
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(entry, "sensor")
-    )
-    return True
+_WRAPPER_KEYS = {"data", "channels", "channelds"}
+_IDENTIFIER_KEYS = {"channel", "channelid", "channelnumber", "id"}
+_MEASUREMENT_RE = re.compile(
+    r"\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*"
+)
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
-    if unload_ok := await hass.config_entries.async_forward_entry_unload(entry, "sensor"):
-        hass.data[DOMAIN].pop(entry.entry_id)
-    return unload_ok
 
-class FritzBoxCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass, config):
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(seconds=30))
-        self.config = config
-
-    async def _async_update_data(self):
-        return await self.hass.async_add_executor_job(self.fetch_data)
-
-    def fetch_data(self):
-        FRITZBOX_URL = f"https://{self.config[CONF_HOST]}"
-        USERNAME = self.config[CONF_USERNAME]
-        PASSWORD = self.config[CONF_PASSWORD]
-
-        session = requests.Session()
-
-        def get_challenge():
-            url = f"{FRITZBOX_URL}/login_sid.lua"
-            response = session.get(url, verify=False)
-            xml_data = ET.fromstring(response.text)
-            sid = xml_data.find("SID").text
-            challenge = xml_data.find("Challenge").text
-            return sid, challenge
-
-        def create_response(challenge, password):
-            if challenge and challenge != "0000000000000000":
-                challenge_response = f"{challenge}-{password}".encode("utf-16le")
-                hash_value = hashlib.md5(challenge_response).hexdigest()
-                return f"{challenge}-{hash_value}"
+def _parse_measurement(value: Any) -> tuple[float | int, str | None] | None:
+    """Parse numeric API values while retaining a supplied unit."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
             return None
+        return value, None
+    if not isinstance(value, str):
+        return None
 
-        def login():
-            sid, challenge = get_challenge()
-            response_hash = create_response(challenge, PASSWORD)
-            if response_hash:
-                login_data = {"username": USERNAME, "response": response_hash}
-                login_response = session.get(f"{FRITZBOX_URL}/login_sid.lua", params=login_data, verify=False)
-                xml_data = ET.fromstring(login_response.text)
-                sid = xml_data.find("SID").text
-                return sid
+    match = _MEASUREMENT_RE.fullmatch(value)
+    if match is None:
+        return None
+    number = float(match.group(1).replace(",", "."))
+    if not math.isfinite(number):
+        return None
+    unit = match.group(2).strip() or None
+    return number, unit
+
+
+def _iter_measurements(
+    value: Any, path: tuple[str | int, ...] = ()
+) -> Iterator[tuple[tuple[str | int, ...], float | int, str | None]]:
+    """Walk channel records and yield paths to numeric measurements."""
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            key_text = str(key)
+            key_normalized = key_text.casefold().replace("_", "")
+            if key_normalized in _IDENTIFIER_KEYS:
+                continue
+            child_path = path if key_normalized in _WRAPPER_KEYS else path + (key_text,)
+            yield from _iter_measurements(child, child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _iter_measurements(child, path + (index,))
+    else:
+        parsed = _parse_measurement(value)
+        if parsed is not None and path:
+            yield path, parsed[0], parsed[1]
+
+
+def _value_at_path(data: Any, path: tuple[str | int, ...]) -> Any:
+    """Read a measurement from the coordinator's latest payload."""
+    value = data
+    for part in path:
+        if isinstance(value, Mapping):
+            value = value[part]
+        elif isinstance(value, list) and isinstance(part, int):
+            value = value[part]
+        else:
             return None
+    return value
 
-        def get_cable_channels():
-            sid = login()
-            if not sid or sid == "0000000000000000":
-                _LOGGER.error("Login failed!")
-                return None
 
-            url = f"{FRITZBOX_URL}/data.lua"
-            params = {
-                "xhr": 1,
-                "sid": sid,
-                "lang": "de",
-                "page": "docInfo",
-                "xhrId": "all",
-                "no_sidrenew": "",
-            }
-            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+def _path_label(path: tuple[str | int, ...]) -> str:
+    return " ".join(str(part + 1 if isinstance(part, int) else part) for part in path)
 
-            response = session.post(url, data=params, headers=headers, verify=False)
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("data", {}).get("channelDs", {})
-            else:
-                _LOGGER.error("Error retrieving cable channel info: %s", response.text)
-                return None
 
-        return get_cable_channels()
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Create an entity for every numeric channel measurement."""
+    coordinator: FritzBoxCoordinator = hass.data[DOMAIN][entry.entry_id]
+    known_paths: set[tuple[str | int, ...]] = set()
+
+    def add_new_entities() -> None:
+        new_entities = []
+        for path, _, _ in _iter_measurements(coordinator.data):
+            if path not in known_paths:
+                known_paths.add(path)
+                new_entities.append(FritzBoxChannelSensor(coordinator, entry, path))
+        if new_entities:
+            async_add_entities(new_entities)
+
+    add_new_entities()
+    entry.async_on_unload(coordinator.async_add_listener(add_new_entities))
+
+
+class FritzBoxChannelSensor(CoordinatorEntity[FritzBoxCoordinator], SensorEntity):
+    """Represent one numeric value reported by a DOCSIS channel."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: FritzBoxCoordinator,
+        entry: ConfigEntry,
+        path: tuple[str | int, ...],
+    ) -> None:
+        super().__init__(coordinator)
+        self._path = path
+        label = _path_label(path)
+        slug = re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_")
+        self._attr_unique_id = f"{entry.entry_id}_{slug}"
+        self._attr_name = f"Channel {label}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            manufacturer="AVM",
+            name="FRITZ!Box DOCSIS Fork",
+        )
+
+    @property
+    def native_value(self) -> float | int | None:
+        """Return the latest measurement value."""
+        parsed = _parse_measurement(_value_at_path(self.coordinator.data, self._path))
+        return parsed[0] if parsed is not None else None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit supplied by the router, when available."""
+        parsed = _parse_measurement(_value_at_path(self.coordinator.data, self._path))
+        return parsed[1] if parsed is not None else None
 
