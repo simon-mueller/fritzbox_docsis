@@ -84,8 +84,8 @@ class FritzBoxApi:
             response.raise_for_status()
             return await response.text()
 
-    async def async_get_channels(self) -> Any:
-        """Authenticate and return the FRITZ!Box downstream channel data."""
+    async def async_get_channels(self) -> dict[str, Any]:
+        """Authenticate and return upstream and downstream channel data."""
         try:
             login_url = f"{self.url}/login_sid.lua"
             challenge_xml = ET.fromstring(await self._get_text(login_url))
@@ -122,10 +122,18 @@ class FritzBoxApi:
             if not isinstance(payload, dict):
                 raise FritzBoxConnectionError("FRITZ!Box returned invalid JSON data")
             data = payload.get("data", {})
-            channels = data.get("channelDs") if isinstance(data, dict) else None
-            if not isinstance(channels, (dict, list)):
+            if not isinstance(data, dict):
                 raise FritzBoxConnectionError(
-                    "FRITZ!Box response did not contain downstream channels"
+                    "FRITZ!Box response did not contain channel data"
+                )
+            channels = {
+                key: data[key]
+                for key in ("channelDs", "channelUs")
+                if isinstance(data.get(key), (dict, list))
+            }
+            if not channels:
+                raise FritzBoxConnectionError(
+                    "FRITZ!Box response did not contain upstream or downstream channels"
                 )
             return channels
         except FritzBoxApiError:

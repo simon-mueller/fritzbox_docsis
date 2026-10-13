@@ -17,8 +17,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import FritzBoxCoordinator
 
-_WRAPPER_KEYS = {"data", "channels", "channelds"}
+_WRAPPER_KEYS = {"data", "channels"}
 _IDENTIFIER_KEYS = {"channel", "channelid", "channelnumber", "id"}
+_CHANNEL_GROUPS = {"channelds": "DOWN", "channelus": "UP"}
 _MEASUREMENT_RE = re.compile(
     r"\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*"
 )
@@ -80,7 +81,14 @@ def _value_at_path(data: Any, path: tuple[str | int, ...]) -> Any:
 
 
 def _path_label(path: tuple[str | int, ...]) -> str:
-    return " ".join(str(part + 1 if isinstance(part, int) else part) for part in path)
+    direction = _CHANNEL_GROUPS.get(str(path[0]).casefold()) if path else None
+    channel_path = path[1:] if direction else path
+    channel_label = " ".join(
+        str(part + 1 if isinstance(part, int) else part) for part in channel_path
+    )
+    if direction:
+        return f"{direction} Channel {channel_label}"
+    return channel_label
 
 
 async def async_setup_entry(
@@ -121,7 +129,7 @@ class FritzBoxChannelSensor(CoordinatorEntity[FritzBoxCoordinator], SensorEntity
         label = _path_label(path)
         slug = re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_")
         self._attr_unique_id = f"{entry.entry_id}_{slug}"
-        self._attr_name = f"Channel {label}"
+        self._attr_name = label
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="AVM",
