@@ -1,18 +1,8 @@
 ---
-This custom integration scrapes the DOCSIS information from your Cable Fritz!Box and creates a sensor for each used channel.
+This custom integration reads downstream DOCSIS measurements from a cable FRITZ!Box and exposes numeric channel values as Home Assistant sensors.
 
 # Configuration
 
-Enable the integration in your `configuration.yaml`:
+Install the `fritzbox_docsis` integration with HACS or place its folder in `custom_components`, then restart Home Assistant. Add it from **Settings > Devices & services > Add integration** and search for **Fritz!Box DOCSIS v2**.
 
-```
-sensor:
-  - platform: FritzBoxDocsis
-    FB_HOST: 192.168.178.1
-    FB_USER: homeassistant
-    FB_PASS: ****************
-```
-
-All fields are mandatory.
-
-Be sure to restart HomeAssistant after adding/changing these.
+Enter the router URL (for example, `http://192.168.178.1`), a FRITZ!Box username, and its password. The account must be allowed to access cable information. HTTPS is supported when Home Assistant trusts the router's certificate; certificate checks are not disabled.
