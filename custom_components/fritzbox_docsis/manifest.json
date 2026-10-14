@@ -1,6 +1,6 @@
 {
   "domain": "fritzbox_docsis",
-  "name": "FRITZ!Box DOCSIS Fork",
+  "name": "Fritz!Box DOCSIS v2",
   "documentation": "https://github.com/simon-mueller/fritzbox_docsis",
   "issue_tracker": "https://github.com/simon-mueller/fritzbox_docsis/issues",
   "version": "2026.10.0",

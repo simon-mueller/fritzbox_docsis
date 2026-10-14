@@ -162,7 +162,7 @@ class FritzBoxChannelSensor(CoordinatorEntity[FritzBoxCoordinator], SensorEntity
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="AVM",
-            name="FRITZ!Box DOCSIS Fork",
+            name="Fritz!Box DOCSIS v2",
         )
 
     @property
