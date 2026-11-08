@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -34,6 +34,7 @@ _MEASUREMENT_PRECISION = {
     "mer": 2,
     "latency": 2,
 }
+_STATISTICS_FIELDS = {"powerlevel", "mse", "mer", "latency"}
 _MEASUREMENT_RE = re.compile(
     r"\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*"
 )
@@ -159,6 +160,8 @@ class FritzBoxChannelSensor(CoordinatorEntity[FritzBoxCoordinator], SensorEntity
         self._attr_suggested_display_precision = _MEASUREMENT_PRECISION.get(
             _field_name(path)
         )
+        if _field_name(path) in _STATISTICS_FIELDS:
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="AVM",
